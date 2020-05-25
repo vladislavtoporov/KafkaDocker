@@ -1,0 +1,87 @@
+version: '2'
+
+networks:
+  backend:
+    ipam:
+      config:
+        - subnet: 172.120.0.0/24
+
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper
+    container_name: zookeeper
+    networks:
+      backend:
+        ipv4_address: 172.120.0.2
+    ports:
+      - "2181:2181"
+  kafka:
+    build:
+      context: kafka
+      dockerfile: Dockerfile
+    container_name: kafka
+    networks:
+      backend:
+        ipv4_address: 172.120.0.3
+    links:
+      - zookeeper:zk
+    ports:
+      - "9092:9092"
+      - "1099:1099"
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: $CF_HOST_IP
+      KAFKA_ZOOKEEPER_CONNECT: zk:2181
+      KAFKA_MESSAGE_MAX_BYTES: 2000000
+      KAFKA_CREATE_TOPICS: "vlad:1:1,partitioned:3:1,filtered:1:1,greeting:1:1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - zookeeper
+
+  kafka_listener:
+    build:
+      context: KafkaListener
+      dockerfile: Dockerfile
+    container_name: kafka_listener
+    networks:
+      backend:
+        ipv4_address: 172.120.0.4
+    depends_on:
+      - kafka
+      - zookeeper
+    ports:
+      - "8082:8082"
+
+  grpc_server:
+    build:
+      context: gRPCServer
+      dockerfile: Dockerfile
+#    hostname: grpc_server
+    container_name: grpc_server
+    networks:
+      backend:
+        ipv4_address: 172.120.0.5
+    depends_on:
+      - kafka
+      - zookeeper
+      - kafka_listener
+    ports:
+      - "8080:8080"
+      - "5051:5051"
+  grpc_client:
+    build:
+      context: gRPCClient
+      dockerfile: Dockerfile
+    container_name: grpc_client
+    networks:
+      backend:
+        ipv4_address: 172.120.0.6
+    links:
+      - grpc_server
+    depends_on:
+      - kafka
+      - zookeeper
+      - grpc_server
+      - kafka_listener
+    ports:
+      - "8081:8081"
